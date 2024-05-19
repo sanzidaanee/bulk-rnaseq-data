@@ -1,0 +1,364 @@
+---
+title: "Bulk RNAseq analysis"
+author: "Sanzida Akhter Anee"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+
+# Install Bioconductor and all other packages
+```{r}
+if (!require("BiocManager", quietly = TRUE))
+install.packages("BiocManager")
+BiocManager::install()
+BiocManager::install ("GenomicFeatures")
+BiocManager::install("DESeq2")                     
+```
+
+
+
+
+# Import data file with creating variable for count and metadate
+```{r}
+cnt <- read.csv("/Users/sanzidaakhteranee/Documents/Online_Course_24/Udemy_bulk rnaseq/Files 2/counts.csv")  #Feature count matrix that have obtained after processing the FASTQ files in Linux
+```
+
+
+```{r}
+met <- read.csv("/Users/sanzidaakhteranee/Documents/Online_Course_24/Udemy_bulk rnaseq/Files 2/metadata2.csv")  # metadata describe the sample that the RNA sequence was obtained from cell line
+```
+
+
+
+
+# Read the count and metadata file
+```{r}
+str(cnt)
+
+str(met)
+```
+
+
+
+
+# Matches the row names of metadata to column names in counts_data
+```{r}
+all(colnames(cnt) %in% rownames(met))
+
+```
+
+
+
+#Checking order of row and column names
+```{r}
+all(colnames(cnt)==rownames(met))
+
+```
+
+# Installation of DESeq2
+```{r}
+BiocManager::install("DESeq2")
+```
+
+
+
+
+#Calling of DESeq2 Library
+```{r}
+library(DESeq2)
+
+```
+
+
+
+
+#Building DESeq2 Dataset
+```{r}
+
+dds <- DESeqDataSetFromMatrix(countData = cnt, 
+                              colData = met, 
+                              design = ~dexamethasone) # study was designed with control and  dexamethasone treatment
+
+ print(dds)
+```
+
+# Removal of low count reads 
+
+```{r}
+ keep <- rowSums(counts(dds)) >= 10
+```
+
+
+
+#Subset dataset
+```{r}
+
+ dds <- dds[keep, ] # all the genes of count reads less than 10 will remove
+ 
+ print(dds)  # thousands of rows have been dropped having count less then 10
+ 
+```
+
+
+
+# Setting reference for DEG  analysis
+```{r}
+dds$dexamethasone <- relevel(dds$dexamethasone, ref= "untreated")
+deg <- DESeq(dds) # set a variable for differential expression analysis
+res <- results(deg) # result
+```
+
+
+
+
+#Save the results at the local folder in CSV file.
+```{r}
+write.csv(res, "test_udemy.csv") # save result in new csv files
+
+```
+
+
+
+
+#Summary Statistics of results
+```{r}
+summary(res)
+```
+
+
+
+
+# Result by changing p value consider alpha 0.05
+```{r}
+new_result <- results(deg, alpha = 0.05)
+summary(new_result)
+```
+
+
+
+
+# Install packages for converting gene id into gene name
+```{r}
+BiocManager::install("org.Hs.eg.db") #organism-specific annotation package for Homo sapiens (human) and map Ensembl IDs to gene symbols:
+
+library(org.Hs.eg.db)
+
+```
+
+
+
+# Create a dataframe
+```{r}
+new_result.df <- as.data.frame(new_result)
+str(new_result.df)
+```
+`
+
+
+
+#Transfer gene id to gene name (create a new column named Symbol in this data frame)
+```{r}
+new_result.df$Symbol <- mapIds (org.Hs.eg.db, rownames (new_result.df), 
+                                keytype = "ENSEMBL", column = "SYMBOL")
+new_result.df
+str(new_result.df)
+```
+
+
+
+
+#save result into a new file
+```{r}
+write.csv(new_result.df, "final_test_udemy.csv")
+```
+`
+
+
+
+#Install packages for building of PCA Plot
+```{r}
+install.packages("gtable", dependencies = TRUE)
+
+```
+
+```{r}
+if (!requireNamespace("BiocManager", force = TRUE))
+                       install.packages("BiocManager")
+                     BiocManager::install("DESeq2")
+                     
+                     
+                     library(DESeq2)
+```
+
+
+
+# PCA plot
+```{r}
+vsd <- vst(deg, blind= FALSE) # vst function is used to apply a variance stabilizing transformation to count data and transformation will take the experimental design into account
+
+plotPCA(vsd, intgroup= "dexamethasone")
+```
+
+
+
+
+#Size factor estimation
+```{r}
+sizeFactors(deg) # normalization factors that account for differences in sequencing depth or library size across samples
+```
+
+
+
+
+#Estimating the dispersion
+```{r}
+plotDispEsts(deg)
+```
+
+
+
+
+#Install Tidyverse and ggplot packages
+```{r}
+install.packages("dplyr")
+install.packages("ggplot2")
+```
+
+
+
+
+#Calling library
+```{r}
+library(dplyr)
+library(ggplot2)
+```
+
+
+
+
+#Building MA plot
+```{r}
+plotMA(new_result)
+```
+
+
+
+
+#Finding about the best Genes
+#Calling dplyr library
+```{r}
+
+library(dplyr)
+best_genes <- new_result.df %>%
+  arrange(padj) %>%
+  head(10)
+best_genes
+```
+
+
+
+
+#Saving of best genes in CSV file
+```{r}
+write.csv(best_genes, "best_genes.csv")
+```
+
+
+
+
+#Creating variable for volcano plot
+```{r}
+Vol <- new_result.df %>%
+  filter (!is.na(padj))
+```
+
+
+
+
+#Generating volcano plot
+```{r}
+ggplot(Vol, aes(x=log2FoldChange, y=-log10(padj), 
+                color= padj <0.05 & 
+                  abs(log2FoldChange) >1)) + 
+geom_point()
+
+```
+
+
+
+
+# Best gene visualization
+```{r}
+ggplot(Vol, 
+       aes(x=log2FoldChange, y=-log10(padj), 
+           color= padj <0.05 & 
+             abs(log2FoldChange) >1)) + 
+  geom_point() +
+  geom_text (data= best_genes, aes(label=Symbol), hjust = -0.2, vjust = 0.5)
+```
+
+
+
+
+# Install packages for building heatmap
+```{r}
+BiocManager::install("ComplexHeatmap")
+library(ComplexHeatmap)
+
+```
+
+
+
+
+# Select top 30 genes
+```{r}
+top_genes <- new_result.df %>%
+  arrange(padj) %>%
+  head(30)
+
+```
+
+
+
+
+# Normalization of the counts and subseting of best genes
+```{r}
+mat <- counts(deg, normalized =T) [rownames(top_genes), ]
+head (mat, 5)
+
+```
+
+
+
+
+#Transforming the values to Z-score
+```{r}
+mat.z <- t(apply(mat, 1, scale))
+head(mat.z, 5)
+```
+
+
+
+
+#Fixing column names using metadata
+```{r}
+colnames(mat.z) <- rownames(met)
+head(mat.z, 5)
+```
+
+
+
+
+#HeatMap generation
+```{r}
+Heatmap(mat.z, 
+        cluster_rows= T, 
+        cluster_columns= T,
+        row_labels= top_genes$Symbol) 
+```
+
+
+
+
+
